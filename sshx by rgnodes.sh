@@ -6,36 +6,23 @@ export NO_COLOR=1
 NAME="RGNODES™ ;D"
 BASE="/tmp/sshx-rgnodes"
 BIN="$BASE/sshx"
-LOG="$BASE/sshx.log"
-PID="$BASE/sshx.pid"
+LOG="$BASE/$(date +%s%N).log"
 
 mkdir -p "$BASE"
 chmod 700 "$BASE" 2>/dev/null || true
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
-echo "║              ⚡ RGNODES™ • SSHx                  ║"
+echo "║             ⚡ RGNODES™ • SSHx                  ║"
 echo "╠══════════════════════════════════════════════════╣"
-echo "║ Status : Initializing                            ║"
-echo "║ Session: $NAME"
+echo "║ Status : GENERATING SESSION                      ║"
+echo "║ Mode   : INSTANT / MULTI-SESSION                 ║"
+echo "║ Name   : $NAME"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
 
-# Remove stale PID/session information.
-if [ -f "$PID" ]; then
-    OLD_PID="$(cat "$PID" 2>/dev/null || true)"
-
-    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-        echo "[•] Stopping previous SSHx process: $OLD_PID"
-        kill "$OLD_PID" 2>/dev/null || true
-    fi
-
-    rm -f "$PID"
-fi
-
-# curl is required by the official installer.
 if ! command -v curl >/dev/null 2>&1; then
-    echo "[•] curl not found. Installing..."
+    echo "[•] curl not found."
 
     if [ "$(id -u)" -eq 0 ]; then
         apt-get update -y >/dev/null 2>&1 || true
@@ -46,80 +33,62 @@ if ! command -v curl >/dev/null 2>&1; then
     fi
 fi
 
-if ! command -v curl >/dev/null 2>&1; then
-    echo "[❌] curl is unavailable."
+command -v curl >/dev/null 2>&1 || {
+    echo "[❌] curl is required."
     exit 1
-fi
+}
 
-# Download only when the binary is missing.
 if [ ! -x "$BIN" ]; then
-    echo "[•] Downloading official SSHx binary..."
+    echo "[•] Installing SSHx..."
 
     if ! (
         cd "$BASE"
-        curl -sSf https://sshx.io/get | sh -s download
-    ) >"$BASE/download.log" 2>&1; then
-
-        echo "[❌] SSHx download failed."
-        echo "[•] Download log: $BASE/download.log"
-        tail -n 30 "$BASE/download.log" 2>/dev/null || true
+        curl -sSf https://sshx.io/get | sh
+    ) >/tmp/rgnodes-sshx-install.log 2>&1; then
+        echo "[❌] SSHx installation failed."
+        echo "[•] Installer log:"
+        cat /tmp/rgnodes-sshx-install.log 2>/dev/null || true
         exit 1
     fi
 
     chmod +x "$BIN" 2>/dev/null || true
 fi
 
-if [ ! -x "$BIN" ]; then
-    echo "[❌] SSHx binary was not installed correctly."
+[ -x "$BIN" ] || {
+    echo "[❌] SSHx executable not found."
     exit 1
-fi
+}
 
-rm -f "$LOG"
-
-echo "[✅] SSHx binary      : READY"
-echo "[✅] Previous session : CLEAN"
-echo "[⚡] Launching SSHx    : NOW"
+echo "[✅] SSHx binary : READY"
+echo "[⚡] Creating a NEW session..."
 echo ""
 
-# Start SSHx immediately.
-nohup "$BIN" \
+# Each execution creates its own independent SSHx session.
+# Do not kill previous sessions.
+"$BIN" \
     --quiet \
     --name "$NAME" \
-    >"$LOG" 2>&1 </dev/null &
+    2>&1 | tee "$LOG"
 
-SSHX_PID=$!
-printf "%s\n" "$SSHX_PID" >"$PID"
-
-echo "╔══════════════════════════════════════════════════╗"
-echo "║              ✅ SSHx STARTED                     ║"
-echo "╠══════════════════════════════════════════════════╣"
-echo "║ PID  : $SSHX_PID"
-echo "║ LOG  : $LOG"
-echo "║ NAME : $NAME"
-echo "╚══════════════════════════════════════════════════╝"
-echo ""
-
-# No polling / no timeout / no long waiting.
-# Read whatever SSHx has already emitted.
-if [ -s "$LOG" ]; then
-    echo "────────────── SSHx OUTPUT ──────────────"
-    cat "$LOG"
-    echo "────────────────────────────────────────"
-else
-    echo "[⚡] SSHx process is running."
-    echo "[•] URL will be emitted by SSHx when its session is initialized."
-fi
+STATUS=${PIPESTATUS[0]}
 
 echo ""
-echo "[✅] Process check:"
-if kill -0 "$SSHX_PID" 2>/dev/null; then
-    echo "    ONLINE • PID $SSHX_PID"
+
+if [ "$STATUS" -eq 0 ]; then
+    echo "╔══════════════════════════════════════════════════╗"
+    echo "║              ✅ SESSION CREATED                  ║"
+    echo "╠══════════════════════════════════════════════════╣"
+    echo "║ RGNODES™ SSHx session generated successfully.    ║"
+    echo "║ This execution does not terminate other         ║"
+    echo "║ existing SSHx sessions.                          ║"
+    echo "╚══════════════════════════════════════════════════╝"
 else
-    echo "    OFFLINE • SSHx exited immediately"
-    echo ""
-    echo "────────────── FAILURE LOG ──────────────"
-    cat "$LOG" 2>/dev/null || true
-    echo "────────────────────────────────────────"
-    exit 1
+    echo "╔══════════════════════════════════════════════════╗"
+    echo "║              ❌ SESSION FAILED                   ║"
+    echo "╠══════════════════════════════════════════════════╣"
+    echo "║ Exit code: $STATUS"
+    echo "║ Log file : $LOG"
+    echo "╚══════════════════════════════════════════════════╝"
+    exit "$STATUS"
 fi
 '
